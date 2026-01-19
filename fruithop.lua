@@ -1,234 +1,266 @@
---==================================================
--- AUTO FRUIT HOP | BLOX FRUITS | MAIN SCRIPT
---==================================================
+-- =========================
+--  FRUIT HOP – ACTUALLY FLAWLESS v4 (LOCKED FINAL)
+-- =========================
 
 repeat task.wait() until game:IsLoaded()
 
---================ CONFIG (OVERRIDABLE BY LOADER) =================
-local CFG = getgenv().AFH_CONFIG or {}
+-- ===== CONFIG SAFETY =====
+getgenv().FRUIT_HOP_CFG = getgenv().FRUIT_HOP_CFG or {}
+local CFG = getgenv().FRUIT_HOP_CFG
 
-CFG.ScanDelay = CFG.ScanDelay or 6
-CFG.RetryDelay = CFG.RetryDelay or 5
-CFG.AutoStore = CFG.AutoStore ~= false
-CFG.RetryUntilCollected = CFG.RetryUntilCollected ~= false
-CFG.EnableRaid = CFG.EnableRaid ~= false
-CFG.FloatHeight = CFG.FloatHeight or 8
-
-CFG.SafeZoneCFrame = CFG.SafeZoneCFrame
-    or CFrame.new(-5073, 315, -3150) -- Castle on the Sea
-
-CFG.Webhook = CFG.Webhook or ""
-
---================ SERVICES =================
-local Players = game:GetService("Players")
-local TeleportService = game:GetService("TeleportService")
-local HttpService = game:GetService("HttpService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local player = Players.LocalPlayer
-local backpack = player:WaitForChild("Backpack")
-
-local request = request or http_request or (syn and syn.request)
-
---================ SAFE ZONE =================
-local function goSafe()
-    local char = player.Character
-    if char and char:FindFirstChild("HumanoidRootPart") then
-        char.HumanoidRootPart.CFrame = CFG.SafeZoneCFrame
-        task.wait(1)
-    end
-end
-
---================ FRUIT UTILS =================
-local function isFruit(obj)
-    return obj:IsA("Tool")
-        and obj:FindFirstChild("Handle")
-        and obj.Name:lower():find("fruit")
-end
-
-local function findFruits()
-    local fruits = {}
-    for _,v in ipairs(workspace:GetDescendants()) do
-        if isFruit(v) then
-            table.insert(fruits, v)
-        end
-    end
-    return fruits
-end
-
---================ COLLECT FRUIT =================
-local function collectFruit(fruit)
-    local char = player.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return false end
-
-    pcall(function()
-        hrp.CFrame = fruit.Handle.CFrame * CFrame.new(0, 0, 2)
-        task.wait(0.25)
-        firetouchinterest(hrp, fruit.Handle, 0)
-        firetouchinterest(hrp, fruit.Handle, 1)
-    end)
-
-    task.wait(0.6)
-    return backpack:FindFirstChild(fruit.Name) ~= nil
-end
-
---================ WEBHOOK =================
-local function sendFruitWebhook(fruitName)
-    if CFG.Webhook == "" or not request then return end
-
-    request({
-        Url = CFG.Webhook,
-        Method = "POST",
-        Headers = {["Content-Type"] = "application/json"},
-        Body = HttpService:JSONEncode({
-            username = "Auto Fruit Hop",
-            content =
-                "🍎 **Fruit Collected**\n"..
-                "**Fruit:** "..fruitName.."\n"..
-                "**Player:** "..player.Name.."\n"..
-                "**Server:** "..string.sub(game.JobId,1,8)
-        })
-    })
-end
-
---================ AUTO STORE =================
-local function storeFruits()
-    if not CFG.AutoStore then return end
-
-    for _,tool in ipairs(backpack:GetChildren()) do
-        if isFruit(tool) then
-            pcall(function()
-                ReplicatedStorage.Remotes.CommF_:InvokeServer(
-                    "StoreFruit",
-                    tool.Name
-                )
-                sendFruitWebhook(tool.Name)
-            end)
-            task.wait(0.3)
-        end
-    end
-end
-
---================ PIRATE RAID =================
-local function getRaidNPCs()
-    local npcs = {}
-    for _,v in ipairs(workspace:GetDescendants()) do
-        if v:IsA("Model")
-        and v:FindFirstChild("Humanoid")
-        and v:FindFirstChild("HumanoidRootPart")
-        and v.Name:lower():find("pirate") then
-            table.insert(npcs, v)
-        end
-    end
-    return npcs
-end
-
--- FLOAT ABOVE NPC + MELEE KILL
-local function killNPC(npc)
-    local char = player.Character
-    if not char then return end
-
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    local hum = char:FindFirstChild("Humanoid")
-    if not hrp or not hum then return end
-
-    while npc.Parent
-    and npc:FindFirstChild("Humanoid")
-    and npc.Humanoid.Health > 0 do
-
-        hrp.CFrame =
-            npc.HumanoidRootPart.CFrame *
-            CFrame.new(0, CFG.FloatHeight, 0)
-
-        pcall(function()
-            ReplicatedStorage.Remotes.CommF_:InvokeServer(
-                "Attack",
-                "Melee"
-            )
-        end)
-
-        task.wait(0.15)
-    end
-end
-
-local function handleRaid()
-    if not CFG.EnableRaid then return false end
-
-    local npcs = getRaidNPCs()
-    if #npcs == 0 then return false end
-
-    for _,npc in ipairs(npcs) do
-        killNPC(npc)
-    end
-
-    task.wait(1)
-    storeFruits()
-    return true
-end
-
---================ SERVER HOP =================
-local function getServer()
-    local ok, data = pcall(function()
-        return HttpService:JSONDecode(
-            game:HttpGet(
-                "https://games.roblox.com/v1/games/"..
-                game.PlaceId..
-                "/servers/Public?sortOrder=Asc&limit=100"
-            )
-        )
-    end)
-
-    if not ok or not data or not data.data then return nil end
-
-    for _,s in ipairs(data.data) do
-        if s.playing < s.maxPlayers and s.id ~= game.JobId then
-            return s.id
-        end
-    end
-end
-
-local function hop()
-    goSafe()
-    task.wait(2)
-
-    local server = getServer()
-    if server then
-        TeleportService:TeleportToPlaceInstance(
-            game.PlaceId,
-            server,
-            player
-        )
-    end
-end
-
---================ MAIN LOOP =================
-task.spawn(function()
-    while true do
-        task.wait(CFG.ScanDelay)
-
-        goSafe()
-
-        local fruits = findFruits()
-        if #fruits > 0 then
-            for _,fruit in ipairs(fruits) do
-                local ok = collectFruit(fruit)
-                if CFG.RetryUntilCollected and not ok then
-                    task.wait(1)
-                    collectFruit(fruit)
-                end
-            end
-            task.wait(1)
-            storeFruits()
-
-        elseif handleRaid() then
-            -- raid handled, re-scan next loop
-
-        else
-            task.wait(CFG.RetryDelay)
-            hop()
-        end
+-- ===== TELEPORT PERSISTENCE =====
+pcall(function()
+    local q = (syn and syn.queue_on_teleport) or queue_on_teleport
+    if q and CFG.RawScriptURL then
+        q(game:HttpGet(CFG.RawScriptURL))
     end
 end)
 
-print("[AutoFruitHop] Main script loaded")
+-- ===== SERVICES =====
+local Players = game:GetService("Players")
+local TeleportService = game:GetService("TeleportService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
+
+local player = Players.LocalPlayer
+local CommF = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
+
+-- ===== EXECUTOR COMPAT =====
+local req =
+    (syn and syn.request) or
+    request or
+    http_request or
+    (fluxus and fluxus.request)
+
+local fireTouch = firetouchinterest or (syn and syn.firetouchinterest)
+
+-- ===== AUTO MARINE =====
+pcall(function()
+    CommF:InvokeServer("SetTeam","Marines")
+end)
+
+-- ===== CHARACTER SAFE =====
+local function getHRP()
+    local char = player.Character or player.CharacterAdded:Wait()
+    return char:WaitForChild("HumanoidRootPart", 10)
+end
+
+-- ===== SAFE ZONE =====
+local function goSafe()
+    if not CFG.SafeZoneBeforeHop then return end
+    local hrp = getHRP()
+    if hrp then
+        hrp.CFrame = CFrame.new(-5073,315,-3150)
+    end
+end
+
+-- =========================
+--  FRUIT CACHE (HARD SAFE)
+-- =========================
+local FruitCache = {}
+
+local function isRealFruit(obj)
+    return obj
+        and obj:IsA("Tool")
+        and obj:FindFirstChild("Handle")
+        and obj:FindFirstChild("Eat")
+        and obj:IsDescendantOf(workspace)
+end
+
+local function rebuildCache()
+    table.clear(FruitCache)
+    for _,v in ipairs(workspace:GetDescendants()) do
+        if isRealFruit(v) then
+            FruitCache[v] = true
+        end
+    end
+end
+
+rebuildCache()
+
+workspace.DescendantAdded:Connect(function(v)
+    if isRealFruit(v) then
+        FruitCache[v] = true
+    end
+end)
+
+workspace.DescendantRemoving:Connect(function(v)
+    FruitCache[v] = nil
+end)
+
+-- =========================
+--  CLOSEST FRUIT
+-- =========================
+local function getClosestFruit()
+    local hrp = getHRP()
+    if not hrp then return end
+
+    local closest, dist = nil, math.huge
+    for fruit in pairs(FruitCache) do
+        if fruit and fruit.Parent and fruit:FindFirstChild("Handle") then
+            local d = (fruit.Handle.Position - hrp.Position).Magnitude
+            if d < dist then
+                dist = d
+                closest = fruit
+            end
+        end
+    end
+    return closest
+end
+
+-- =========================
+--  INVENTORY CHECK (PERFECT MATCH)
+-- =========================
+local function ownsFruit(name)
+    local bp = player:FindFirstChild("Backpack")
+    local char = player.Character
+    for _,src in ipairs({bp, char}) do
+        if src then
+            for _,v in ipairs(src:GetChildren()) do
+                if v:IsA("Tool") and v.Name == name then
+                    return true
+                end
+            end
+        end
+    end
+end
+
+local function waitForFruit(name, timeout)
+    local t = os.clock()
+    while os.clock() - t < (timeout or 5) do
+        if ownsFruit(name) then return true end
+        task.wait(0.2)
+    end
+end
+
+-- =========================
+--  PICKUP (DESPAWN-PROOF)
+-- =========================
+local function pickupFruit(fruit)
+    local hrp = getHRP()
+    if not hrp then return end
+
+    for _ = 1,10 do
+        if not fruit or not fruit.Parent or not fruit:FindFirstChild("Handle") then
+            return
+        end
+        if ownsFruit(fruit.Name) then return true end
+
+        hrp.CFrame = fruit.Handle.CFrame * CFrame.new(0,1.5,0)
+        task.wait(0.12)
+
+        if fireTouch then
+            pcall(function()
+                fireTouch(hrp, fruit.Handle, 0)
+                fireTouch(hrp, fruit.Handle, 1)
+            end)
+        end
+
+        for _,v in ipairs(fruit:GetDescendants()) do
+            if v:IsA("TouchTransmitter") and fireTouch then
+                fireTouch(hrp, v.Parent, 0)
+                fireTouch(hrp, v.Parent, 1)
+            end
+        end
+
+        task.wait(0.25)
+    end
+end
+
+-- =========================
+--  STORE
+-- =========================
+local function storeFruit(name)
+    for _ = 1,6 do
+        pcall(function()
+            CommF:InvokeServer("StoreFruit", name)
+        end)
+        task.wait(1)
+        if not ownsFruit(name) then return true end
+    end
+end
+
+-- =========================
+--  WEBHOOK (SAFE)
+-- =========================
+local function sendWebhook(fruit)
+    if not CFG.FruitWebhook or not req then return end
+    pcall(function()
+        req({
+            Url = CFG.FruitWebhook,
+            Method = "POST",
+            Headers = {["Content-Type"] = "application/json"},
+            Body = HttpService:JSONEncode({
+                username = "Fruit Hopper",
+                content =
+                    "🍏 Fruit Stored\n"..
+                    "• Fruit: "..fruit.."\n"..
+                    "• Player: "..player.Name.."\n"..
+                    "• JobId: "..string.sub(game.JobId,1,8)
+            })
+        })
+    end)
+end
+
+-- =========================
+--  SERVER HOP (HTTP SAFE)
+-- =========================
+local visited = {}
+
+local function hop()
+    if not req then return end
+    goSafe()
+    task.wait(1)
+
+    local cursor = ""
+    for _ = 1,5 do
+        local res = req({
+            Url = "https://games.roblox.com/v1/games/"..game.PlaceId..
+            "/servers/Public?sortOrder=Asc&limit=100"..(cursor ~= "" and "&cursor="..cursor or ""),
+            Method = "GET"
+        })
+
+        if not res or not res.Body then return end
+        local body = typeof(res.Body) == "string" and res.Body or HttpService:JSONEncode(res.Body)
+        local data = HttpService:JSONDecode(body)
+
+        for _,s in ipairs(data.data or {}) do
+            if s.playing < s.maxPlayers
+            and s.id ~= game.JobId
+            and not visited[s.id] then
+                visited[s.id] = true
+                TeleportService:TeleportToPlaceInstance(game.PlaceId, s.id, player)
+                return
+            end
+        end
+
+        cursor = data.nextPageCursor
+        if not cursor then break end
+        task.wait(2)
+    end
+end
+
+-- =========================
+--  MAIN LOOP (LOCKED)
+-- =========================
+while task.wait(CFG.RetryDelay or 2) do
+    local fruit = getClosestFruit()
+
+    if fruit then
+        pickupFruit(fruit)
+        waitForFruit(fruit.Name, 5)
+
+        if CFG.AutoStoreFruit ~= false and ownsFruit(fruit.Name) then
+            if storeFruit(fruit.Name) then
+                sendWebhook(fruit.Name)
+                task.wait(CFG.ConfirmTime or 6)
+            end
+        end
+    elseif CFG.RetryUntilFruit then
+        rebuildCache()
+        task.wait(1)
+        if not getClosestFruit() then
+            hop()
+        end
+    end
+end
